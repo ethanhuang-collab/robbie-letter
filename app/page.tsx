@@ -464,7 +464,7 @@ function LetterView({ onFinished }: { onFinished: () => void }) {
     if (lines.length === 0) return;
 
     // Don't observe until user has scrolled significantly AND is near the end
-    if (scrollCountRef.current < 10 || activeIdx < lines.length - 4) return;
+    if (scrollCountRef.current < 10 || activeIdx < lines.length - 6) return;
 
     const observer = new IntersectionObserver(
       (entries) => {
@@ -601,9 +601,12 @@ function LetterView({ onFinished }: { onFinished: () => void }) {
                 </div>
               );
             })}
-            {/* Sentinel: when this scrolls into view, the letter is done */}
+            {/* Spacer past the end of the letter */}
+            <div className="snap-center min-h-[30px]" aria-hidden="true">{"\u00A0"}</div>
+            {/* Sentinel: triggers the thank-you screen */}
             <div
               ref={sentinelRef}
+              className="snap-center"
               style={{ height: "1px" }}
               aria-hidden="true"
             />
