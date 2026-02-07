@@ -197,6 +197,39 @@ function generateDots(count: number): Dot[] {
   return dots;
 }
 
+/* ──────────────────────── floating dots component ──────────────────────── */
+
+function FloatingDots({ dots }: { dots: Dot[] }) {
+  return (
+    <div className="pointer-events-none absolute inset-0">
+      {dots.map((d) => {
+        const style: React.CSSProperties & {
+          "--dx": string;
+          "--dy": string;
+        } = {
+          top: `${d.topPct}%`,
+          left: `${d.leftPct}%`,
+          width: `${d.sizePx}px`,
+          height: `${d.sizePx}px`,
+          opacity: d.opacity,
+          "--dx": `${d.dxPx}px`,
+          "--dy": `${d.dyPx}px`,
+          animation: `floatDot ${d.durationS}s ease-in-out ${d.delayS}s infinite alternate`,
+          filter: "blur(0.3px)",
+        };
+
+        return (
+          <div
+            key={d.id}
+            className="absolute rounded-full bg-[#8B7355]"
+            style={style}
+          />
+        );
+      })}
+    </div>
+  );
+}
+
 /* ──────────────────────── emphasis rendering ──────────────────────── */
 
 const EMPHASIZE_PHRASES = [
@@ -250,12 +283,10 @@ function SplashScreen({ onContinue }: { onContinue: () => void }) {
   const [dots, setDots] = useState<Dot[]>([]);
 
   useEffect(() => {
-    const raf = window.requestAnimationFrame(() => {
-      setDots(generateDots(30));
-    });
+    // Generate dots immediately so they appear right away
+    setDots(generateDots(30));
     const t = window.setTimeout(() => setReady(true), 3500);
     return () => {
-      window.cancelAnimationFrame(raf);
       window.clearTimeout(t);
     };
   }, []);
@@ -306,32 +337,7 @@ function SplashScreen({ onContinue }: { onContinue: () => void }) {
       `}</style>
 
       {/* floating dots */}
-      <div className="pointer-events-none absolute inset-0">
-        {dots.map((d) => {
-          const style: React.CSSProperties & {
-            "--dx": string;
-            "--dy": string;
-          } = {
-            top: `${d.topPct}%`,
-            left: `${d.leftPct}%`,
-            width: `${d.sizePx}px`,
-            height: `${d.sizePx}px`,
-            opacity: d.opacity,
-            "--dx": `${d.dxPx}px`,
-            "--dy": `${d.dyPx}px`,
-            animation: `floatDot ${d.durationS}s ease-in-out ${d.delayS}s infinite alternate`,
-            filter: "blur(0.3px)",
-          };
-
-          return (
-            <div
-              key={d.id}
-              className="absolute rounded-full bg-[#C4A97D]"
-              style={style}
-            />
-          );
-        })}
-      </div>
+      <FloatingDots dots={dots} />
 
       <main className="relative mx-auto flex min-h-screen max-w-3xl items-center justify-center px-6">
         <div className="text-center">
@@ -366,19 +372,24 @@ function SplashScreen({ onContinue }: { onContinue: () => void }) {
 
 /* ─────────────────────── letter view ─────────────────────── */
 
-function LetterView() {
+function LetterView({ onFinished }: { onFinished: () => void }) {
   const [lines, setLines] = useState<Line[]>([]);
+  const [dots, setDots] = useState<Dot[]>([]);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const lineRefs = useRef<Array<HTMLDivElement | null>>([]);
   const rafRef = useRef<number | null>(null);
   const contentRef = useRef<HTMLDivElement | null>(null);
   const measureRef = useRef<HTMLSpanElement | null>(null);
+  const sentinelRef = useRef<HTMLDivElement | null>(null);
+  const finishedRef = useRef(false);
+  const scrollCountRef = useRef(0);
 
   const [activeIdx, setActiveIdx] = useState<number>(0);
 
   // Auto-focus the scroll container so keyboard scrolling works immediately
   useEffect(() => {
     containerRef.current?.focus();
+    setDots(generateDots(24));
   }, []);
 
   const recomputeActive = useCallback(() => {
@@ -407,6 +418,7 @@ function LetterView() {
   }, []);
 
   const onScroll = useCallback(() => {
+    scrollCountRef.current += 1;
     if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
     rafRef.current = requestAnimationFrame(recomputeActive);
   }, [recomputeActive]);
@@ -444,31 +456,59 @@ function LetterView() {
     };
   }, [recomputeWrap, recomputeActive]);
 
+  // Detect when the sentinel at the bottom scrolls into view
+  useEffect(() => {
+    const sentinel = sentinelRef.current;
+    const container = containerRef.current;
+    if (!sentinel || !container) return;
+    if (lines.length === 0) return;
+
+    // Don't observe until user has scrolled significantly AND is near the end
+    if (scrollCountRef.current < 10 || activeIdx < lines.length - 4) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting && !finishedRef.current) {
+          finishedRef.current = true;
+          onFinished();
+        }
+      },
+      { root: container, threshold: 0.1 }
+    );
+
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [onFinished, activeIdx, lines.length]);
+
   return (
-    <div className="min-h-screen bg-[#FDFAF6]">
+    <div className="relative min-h-screen overflow-hidden bg-[#FDFAF6]">
       <style>{`
         @keyframes letterFadeIn {
           from { opacity: 0; transform: translateY(14px); }
           to { opacity: 1; transform: translateY(0); }
         }
+        @keyframes floatDot {
+          0% { transform: translate3d(0, 0, 0); }
+          100% { transform: translate3d(var(--dx), var(--dy), 0); }
+        }
       `}</style>
 
+      {/* floating dots behind the letter */}
+      <FloatingDots dots={dots} />
+
       <main
-        className="mx-auto w-full max-w-2xl px-4 py-10 sm:px-8"
+        className="relative mx-auto w-full max-w-2xl px-14 py-10 sm:px-24"
         style={{ animation: "letterFadeIn 800ms ease-out both" }}
       >
-        <div className="flex items-baseline justify-between">
-          <div className="font-serif text-sm font-medium text-[#9C8E7C]">
-            A letter for Robbie
-          </div>
-          <div className="text-xs text-[#B5A48E]">scroll to read</div>
+        <div className="font-serif text-sm font-medium text-[#9C8E7C]">
+          A letter for Robbie
         </div>
 
         <div
           ref={containerRef}
           onScroll={onScroll}
           tabIndex={0}
-          className="relative mt-6 h-[75vh] snap-y snap-mandatory overflow-y-auto overflow-x-hidden rounded-2xl border border-[#E8DFD0] bg-white px-6 py-10 shadow-[0_2px_24px_rgba(44,35,24,0.05)] outline-none"
+          className="relative mt-6 h-[80vh] snap-y snap-mandatory overflow-y-auto overflow-x-hidden px-2 py-10 outline-none"
           style={{
             WebkitMaskImage:
               "linear-gradient(to bottom, transparent, black 10%, black 90%, transparent)",
@@ -552,6 +592,7 @@ function LetterView() {
                   style={{
                     opacity,
                     transform: `scale(${scale})`,
+                    transformOrigin: "left center",
                   }}
                 >
                   {line.isEmpty
@@ -560,10 +601,51 @@ function LetterView() {
                 </div>
               );
             })}
+            {/* Sentinel: when this scrolls into view, the letter is done */}
+            <div
+              ref={sentinelRef}
+              style={{ height: "1px" }}
+              aria-hidden="true"
+            />
           </div>
+        </div>
+      </main>
+    </div>
+  );
+}
 
-          {/* center guide (very subtle) */}
-          <div className="pointer-events-none absolute left-0 right-0 top-1/2 h-px -translate-y-1/2 bg-[#E8DFD0]/30" />
+/* ─────────────────────── end screen ─────────────────────── */
+
+function EndScreen() {
+  const [dots, setDots] = useState<Dot[]>([]);
+
+  useEffect(() => {
+    setDots(generateDots(30));
+  }, []);
+
+  return (
+    <div className="relative min-h-screen overflow-hidden bg-[#FDFAF6]">
+      <style>{`
+        @keyframes floatDot {
+          0% { transform: translate3d(0, 0, 0); }
+          100% { transform: translate3d(var(--dx), var(--dy), 0); }
+        }
+        @keyframes endFadeIn {
+          from { opacity: 0; transform: translateY(10px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+      `}</style>
+
+      <FloatingDots dots={dots} />
+
+      <main className="relative mx-auto flex min-h-screen max-w-3xl items-center justify-center px-6">
+        <div
+          className="text-center"
+          style={{ animation: "endFadeIn 1s ease-out both" }}
+        >
+          <div className="font-serif text-3xl font-medium tracking-tight text-[#2C2318] sm:text-4xl">
+            Thank you for reading.
+          </div>
         </div>
       </main>
     </div>
@@ -573,15 +655,35 @@ function LetterView() {
 /* ─────────────────────── root component ─────────────────────── */
 
 export default function Home() {
-  const [phase, setPhase] = useState<"splash" | "fading" | "letter">("splash");
+  const [phase, setPhase] = useState<
+    "splash" | "fading" | "letter" | "ending" | "end"
+  >("splash");
 
   const handleContinue = useCallback(() => {
     setPhase("fading");
     setTimeout(() => setPhase("letter"), 650);
   }, []);
 
-  if (phase === "letter") {
-    return <LetterView />;
+  const handleFinished = useCallback(() => {
+    setPhase("ending");
+    setTimeout(() => setPhase("end"), 800);
+  }, []);
+
+  if (phase === "end") {
+    return <EndScreen />;
+  }
+
+  if (phase === "letter" || phase === "ending") {
+    return (
+      <div
+        style={{
+          opacity: phase === "ending" ? 0 : 1,
+          transition: "opacity 800ms ease-out",
+        }}
+      >
+        <LetterView onFinished={handleFinished} />
+      </div>
+    );
   }
 
   return (
